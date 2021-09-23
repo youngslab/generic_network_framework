@@ -1,0 +1,7 @@
+*.swp
+*.swo
+*.swn
+.clangd
+.cache
+build
+compile_commands.json
