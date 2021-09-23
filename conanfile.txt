@@ -1,0 +1,9 @@
+[requires]
+fmt/8.0.0
+boost/1.77.0
+
+[generators]
+cmake_find_package
+
+[options]
+fmt:header_only=True
