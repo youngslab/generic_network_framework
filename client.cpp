@@ -7,9 +7,19 @@
 class ChatClient
     : public gnf::GenericClient<boost::asio::ip::tcp::socket, ChatMessageType> {
 
+protected:
   auto onMessageRecieved(const gnf::Message<ChatMessageType> &message)
       -> void override {
-    std::cout << "message recieved";
+    gnf::GenericClient<boost::asio::ip::tcp::socket,
+		       ChatMessageType>::onMessageRecieved(message);
+    std::cout << "message recieved\n";
+  }
+
+  auto onMessageSent(const gnf::Message<ChatMessageType> &message)
+      -> void override {
+    gnf::GenericClient<boost::asio::ip::tcp::socket,
+		       ChatMessageType>::onMessageSent(message);
+    std::cout << "message sent\n";
   }
 
 public:

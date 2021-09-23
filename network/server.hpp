@@ -39,7 +39,6 @@ public:
 	_onChannelCreated(handler) {}
 
   auto start(int port) {
-
     boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), port);
 
     _asioAcceptor.open(endpoint.protocol());
@@ -68,6 +67,7 @@ template <typename Socket, typename MessageType> class GenericServer {
 private:
   boost::asio::io_service _asioContext;
 
+  uint32_t _numWorkers;
   std::vector<std::thread> _workers;
 
   // Connector
@@ -80,10 +80,16 @@ private:
 
   auto onConnected(std::unique_ptr<Channel<Socket, MessageType>> channel) {
     auto id = _id++;
-    sessions[id] = std::move(channel);
-    sessions[id]->registerOnMessageRecieved(
+
+    channel->registerOnMessageRecieved(
 	[=](auto const &msg) { onMessageRecieved(id, msg); });
-    sessions[id]->start();
+
+    channel->registerOnMessageSent(
+	[=](auto const &msg) { onMessageSent(id, msg); });
+
+    channel->start();
+
+    sessions[id] = std::move(channel);
 
     onSessionCreated(id);
   }
@@ -93,17 +99,20 @@ private:
   virtual auto onMessageRecieved(int id, Message<MessageType> const &msg)
       -> void {}
 
+  virtual auto onMessageSent(int id, Message<MessageType> const &msg)
+      -> void {}
+
 public:
-  GenericServer()
-      : _id(0), _connector(_asioContext, [=](auto channel) {
+  GenericServer(int numWorkers=1)
+      : _numWorkers(numWorkers), _id(0), _connector(_asioContext, [=](auto channel) {
 	  onConnected(std::move(channel));
 	}) {}
 
-  auto start(uint32_t port, int threadCount) {
+  auto start(uint32_t port) {
 
     _connector.start(port);
 
-    for (int i = 0; i < threadCount; ++i) {
+    for (int i = 0; i < _numWorkers; ++i) {
       _workers.emplace_back([=] { _asioContext.run(); });
     }
   }

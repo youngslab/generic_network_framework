@@ -20,7 +20,7 @@ private:
 
   // write
   boost::asio::io_service::strand _writeStrand;
-  std::function<void(Message<MessageType> const &)> _onMessageWrote;
+  std::function<void(Message<MessageType> const &)> _onMessageSent;
 
   auto asyncReadHeader() -> void {
     boost::asio::async_read(
@@ -68,7 +68,7 @@ public:
 
   auto start() {
     // request to read a header first
-		std::cout << "channel start read\n";
+    std::cout << "channel start read\n";
     asyncReadHeader();
   }
 
@@ -79,8 +79,8 @@ public:
     boost::asio::async_write(
 	*_socket, boost::asio::buffer(msg.get(), msg->size()),
 	_writeStrand.wrap([me = this, m = msg](auto &ec, auto) {
-	  if (me->_onMessageWrote)
-	    me->_onMessageWrote(*m);
+	  if (me->_onMessageSent)
+	    me->_onMessageSent(*m);
 	}));
   }
 
@@ -88,6 +88,11 @@ public:
       std::function<void(Message<MessageType> const &)> onMessageRecieved)
       -> void {
     _onMessageRecieved = onMessageRecieved;
+  }
+
+  auto registerOnMessageSent(
+      std::function<void(Message<MessageType> const &)> onMessageSent) -> void {
+    _onMessageSent = onMessageSent;
   }
 };
 

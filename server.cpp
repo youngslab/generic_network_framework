@@ -1,5 +1,3 @@
-
-
 #include <iostream>
 #include <fmt/format.h>
 
@@ -11,11 +9,16 @@ class ChatServer
 
   void onMessageRecieved(int id,
 			 const gnf::Message<ChatMessageType> &msg) override {
-    std::cout << fmt::format("{}) recieved msg", id);
+    std::cout << fmt::format("{}) message recieved.\n", id);
+  }
+
+  void onMessageSent(int id,
+		     const gnf::Message<ChatMessageType> &msg) override {
+    std::cout << fmt::format("{}) message sent.\n", id);
   }
 
   void onSessionCreated(int id) override {
-    std::cout << fmt::format("{}) session created", id);
+    std::cout << fmt::format("{}) session created.\n", id);
   }
 
 public:
@@ -24,8 +27,8 @@ public:
 };
 
 int main() {
-  ChatServer server(8765, 2);
-
+  ChatServer server;
+  server.start(8765);
   while (1) {
   }
 }
