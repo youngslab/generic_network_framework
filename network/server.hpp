@@ -2,121 +2,103 @@
 
 #pragma once
 
+#include "connector.hpp"
 #include <unordered_map>
-#include "channel.hpp"
-
-#include <iostream>
-#include <fmt/format.h>
 
 namespace gnf {
 
-template <typename Socket, typename MessageType> class Connections {
-
-  using ChannelType = Channel<Socket, MessageType>;
-  using ChannelCreatedHandlerType =
-      std::function<void(std::unique_ptr<ChannelType>)>;
-
-  boost::asio::io_context &_asioContext;
-  boost::asio::ip::tcp::acceptor _asioAcceptor;
-  ChannelCreatedHandlerType _onChannelCreated;
-
-  auto startAccepting() -> void {
-
-		std::cout << "start accepting clients\n";
-
-    auto socket = std::make_unique<Socket>(_asioContext);
-    // unique_ptr will be moved to labmda. So we keep it as ref for a moment.
-    auto &ref = *socket;
-    _asioAcceptor.async_accept(ref, [=,
-				     s = std::move(socket)](auto &ec) mutable {
-      if (this->_onChannelCreated)
-	this->_onChannelCreated(
-	    std::make_unique<ChannelType>(this->_asioContext, std::move(s)));
-      this->startAccepting();
-    });
-  }
+/**
+ * @brief GenericServer will manage sessions which contain id and channel.
+ *
+ * @tparam Socket
+ * @tparam MessageType
+ */
+template <typename Socket, typename MessageType> class GenericServer {
 
 public:
-  Connections(boost::asio::io_context &context)
-      : _asioContext(context), _asioAcceptor(context) {}
+  GenericServer(int numWorkers = 1)
+      : _numWorkers(numWorkers), _id(0),
+	_connector(_asioContext,
+		   [=](auto channel) { onConnected(std::move(channel)); }) {}
 
-  auto start(int port, ChannelCreatedHandlerType handler) {
+  auto start(uint32_t port) -> void {
 
-    boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), port);
+    _connector.start(port);
 
-    _asioAcceptor.open(endpoint.protocol());
-    _asioAcceptor.set_option(
-	boost::asio::ip::tcp::acceptor::reuse_address(true));
-    _asioAcceptor.bind(endpoint);
-    _asioAcceptor.listen();
-
-    _onChannelCreated = handler;
-
-
-    startAccepting();
+    for (int i = 0; i < _numWorkers; ++i) {
+      _workers.emplace_back([=] { _asioContext.run(); });
+    }
   }
 
   auto stop() {
-    _asioAcceptor.cancel();
-    _onChannelCreated = nullptr;
+
+    _asioContext.post([=]() {
+      _connector.stop();
+    });
+
+    for (auto &worker : _workers) {
+      if (!worker.joinable())
+	continue;
+      worker.join();
+    }
   }
 
-  ~Connections() { stop(); }
-};
+  virtual ~GenericServer() { stop(); }
 
-/*
- * Resposibility
- * - manage sessions.
- * - create threads.
- * */
-template <typename Socket, typename MessageType> class GenericServer {
+protected:
+  /**
+   * @brief Callback funcntion. It will be called when session is created,
+   *
+   * @param id Session id
+   *
+   * @return Nothing
+   */
+  virtual auto onSessionCreated(int id) -> void {}
+
+  virtual auto onSessionClosed(int id, std::error_code const &ec) -> void {
+    sessions.erase(id);
+  }
+
+  virtual auto onMessageRecieved(int id, Message<MessageType> const &msg)
+      -> void {}
+
+  virtual auto onMessageSent(int id, Message<MessageType> const &msg) -> void {}
+
 private:
-  // threads
-  int _threadCount;
-  std::vector<std::thread> _threadPool;
-
-  // asio for a server
+  // asio context
   boost::asio::io_service _asioContext;
 
-  // Connections
+  // workers
+  uint32_t _numWorkers;
+  std::vector<std::thread> _workers;
+
+  // Connector
+  Connector<Socket, MessageType> _connector;
+
+  // Sessions
   int _id;
-  Connections<Socket, MessageType> connections;
   std::unordered_map<uint32_t, std::unique_ptr<Channel<Socket, MessageType>>>
       sessions;
 
   auto onConnected(std::unique_ptr<Channel<Socket, MessageType>> channel) {
     auto id = _id++;
-		std::cout << fmt::format("channel created {}\n", id);
-    sessions[id] = std::move(channel);
-    sessions[id]->registerOnMessageRecieved(
+
+    // Register handlers
+    channel->registerOnMessageRecieved(
 	[=](auto const &msg) { onMessageRecieved(id, msg); });
-    sessions[id]->start();
-  }
 
-  virtual auto onSessionCreated(int id) -> void {}
+    channel->registerOnMessageSent(
+	[=](auto const &msg) { onMessageSent(id, msg); });
 
-  virtual auto onMessageRecieved(int id, Message<MessageType> const &msg)
-      -> void {}
+    channel->registerOnClosed([=](auto const &ec) { onSessionClosed(id, ec); });
 
-public:
-  GenericServer(uint32_t port, int threadCount)
-      : connections(_asioContext), _threadCount(threadCount) {
+    // Start listening
+    channel->start();
 
-    connections.start(port,
-		      [=](auto channel) { onConnected(std::move(channel)); });
+    // Resigster internal session's container
+    sessions[id] = std::move(channel);
 
-    // start pool of threads to process the asio events
-    for (int i = 0; i < _threadCount; ++i) {
-      _threadPool.emplace_back([=] { _asioContext.run(); });
-    }
-  }
-
-  virtual ~GenericServer() {
-    for (auto &t : _threadPool) {
-      if (!t.joinable())
-	continue;
-      t.join();
-    }
+    onSessionCreated(id);
   }
 };
 
