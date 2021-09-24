@@ -9,8 +9,9 @@ class ChatServer
 
   void onMessageRecieved(int id,
 			 const gnf::Message<ChatMessageType> &msg) override {
-     gnf::GenericServer<boost::asio::ip::tcp::socket, ChatMessageType>::onMessageRecieved(id, msg);
-    std::cout << fmt::format("{}) message recieved.\n", id);
+    gnf::GenericServer<boost::asio::ip::tcp::socket,
+		       ChatMessageType>::onMessageRecieved(id, msg);
+    std::cout << fmt::format("{}) message={}\n", id, msg.body.data());
   }
 
   void onMessageSent(int id,

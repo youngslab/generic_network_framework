@@ -32,11 +32,23 @@ int main() {
   ChatClient client;
   client.start("127.0.0.1", 8765);
   while (1) {
-    getchar();
+    auto buff = std::array<char, 1000>{};
+    std::cin.getline(buff.data(), buff.size());
 
+    if (strcmp(buff.data(), "q") == 0) {
+      std::cout << "Client exited.\n";
+      break;
+    }
+
+    auto len = strlen(buff.data());
     gnf::Message<ChatMessageType> message;
     message.header.type = ChatMessageType::Message;
-    message.header.size = 0;
+    message.header.size = len;
+    message.body.resize(len);
+    message.body.insert(message.body.begin(), buff.data(), buff.data() + len);
+
+    std::cout << fmt::format("send data: {}\n", message.body.data());
+
     client.sendAsync(message);
   }
 }
