@@ -2,71 +2,67 @@
 
 #pragma once
 
+#include "connector.hpp"
 #include <unordered_map>
-#include "channel.hpp"
-
-#include <iostream>
-#include <fmt/format.h>
 
 namespace gnf {
 
-template <typename Socket, typename MessageType> class Connector {
-
-  using ChannelType = Channel<Socket, MessageType>;
-  using ChannelCreatedHandlerType =
-      std::function<void(std::unique_ptr<ChannelType>)>;
-
-  boost::asio::io_context &_asioContext;
-  boost::asio::ip::tcp::acceptor _asioAcceptor;
-  ChannelCreatedHandlerType _onChannelCreated;
-
-  auto startAccepting() -> void {
-    auto socket = std::make_unique<Socket>(_asioContext);
-    // unique_ptr will be moved to labmda. So we keep it as ref for a moment.
-    auto &ref = *socket;
-    _asioAcceptor.async_accept(ref, [=,
-				     s = std::move(socket)](auto &ec) mutable {
-      if (this->_onChannelCreated)
-	this->_onChannelCreated(
-	    std::make_unique<ChannelType>(this->_asioContext, std::move(s)));
-      this->startAccepting();
-    });
-  }
+/**
+ * @brief GenericServer will manage sessions which contain id and channel.
+ *
+ * @tparam Socket
+ * @tparam MessageType
+ */
+template <typename Socket, typename MessageType> class GenericServer {
 
 public:
-  Connector(boost::asio::io_context &context, ChannelCreatedHandlerType handler)
-      : _asioContext(context), _asioAcceptor(context),
-	_onChannelCreated(handler) {}
+  GenericServer(int numWorkers = 1)
+      : _numWorkers(numWorkers), _id(0),
+	_connector(_asioContext,
+		   [=](auto channel) { onConnected(std::move(channel)); }) {}
 
-  auto start(int port) {
-    boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), port);
+  auto start(uint32_t port) -> void {
 
-    _asioAcceptor.open(endpoint.protocol());
-    _asioAcceptor.set_option(
-	boost::asio::ip::tcp::acceptor::reuse_address(true));
-    _asioAcceptor.bind(endpoint);
-    _asioAcceptor.listen();
+    _connector.start(port);
 
-    startAccepting();
+    for (int i = 0; i < _numWorkers; ++i) {
+      _workers.emplace_back([=] { _asioContext.run(); });
+    }
   }
 
   auto stop() {
-    _asioAcceptor.cancel();
-    _onChannelCreated = nullptr;
+
+    _connector.stop();
+
+    for (auto &worker : _workers) {
+      if (!worker.joinable())
+	continue;
+      worker.join();
+    }
   }
 
-  ~Connector() { stop(); }
-};
+  virtual ~GenericServer() { stop(); }
 
-/*
- * Resposibility
- * - manage sessions.
- * - create threads.
- * */
-template <typename Socket, typename MessageType> class GenericServer {
+protected:
+  /**
+   * @brief Callback funcntion. It will be called when session is created,
+   *
+   * @param id Session id
+   *
+   * @return Nothing
+   */
+  virtual auto onSessionCreated(int id) -> void {}
+
+  virtual auto onMessageRecieved(int id, Message<MessageType> const &msg)
+      -> void {}
+
+  virtual auto onMessageSent(int id, Message<MessageType> const &msg) -> void {}
+
 private:
+  // asio context
   boost::asio::io_service _asioContext;
 
+  // workers
   uint32_t _numWorkers;
   std::vector<std::thread> _workers;
 
@@ -81,48 +77,20 @@ private:
   auto onConnected(std::unique_ptr<Channel<Socket, MessageType>> channel) {
     auto id = _id++;
 
+    // Register handlers
     channel->registerOnMessageRecieved(
 	[=](auto const &msg) { onMessageRecieved(id, msg); });
 
     channel->registerOnMessageSent(
 	[=](auto const &msg) { onMessageSent(id, msg); });
 
+    // Start listening
     channel->start();
 
+    // Resigster internal session's container
     sessions[id] = std::move(channel);
 
     onSessionCreated(id);
-  }
-
-  virtual auto onSessionCreated(int id) -> void {}
-
-  virtual auto onMessageRecieved(int id, Message<MessageType> const &msg)
-      -> void {}
-
-  virtual auto onMessageSent(int id, Message<MessageType> const &msg)
-      -> void {}
-
-public:
-  GenericServer(int numWorkers=1)
-      : _numWorkers(numWorkers), _id(0), _connector(_asioContext, [=](auto channel) {
-	  onConnected(std::move(channel));
-	}) {}
-
-  auto start(uint32_t port) {
-
-    _connector.start(port);
-
-    for (int i = 0; i < _numWorkers; ++i) {
-      _workers.emplace_back([=] { _asioContext.run(); });
-    }
-  }
-
-  virtual ~GenericServer() {
-    for (auto &worker : _workers) {
-      if (!worker.joinable())
-	continue;
-      worker.join();
-    }
   }
 };
 
