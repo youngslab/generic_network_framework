@@ -32,7 +32,9 @@ public:
 
   auto stop() {
 
-    _connector.stop();
+    _asioContext.post([=]() {
+      _connector.stop();
+    });
 
     for (auto &worker : _workers) {
       if (!worker.joinable())
@@ -52,6 +54,10 @@ protected:
    * @return Nothing
    */
   virtual auto onSessionCreated(int id) -> void {}
+
+  virtual auto onSessionClosed(int id, std::error_code const &ec) -> void {
+    sessions.erase(id);
+  }
 
   virtual auto onMessageRecieved(int id, Message<MessageType> const &msg)
       -> void {}
@@ -83,6 +89,8 @@ private:
 
     channel->registerOnMessageSent(
 	[=](auto const &msg) { onMessageSent(id, msg); });
+
+    channel->registerOnClosed([=](auto const &ec) { onSessionClosed(id, ec); });
 
     // Start listening
     channel->start();

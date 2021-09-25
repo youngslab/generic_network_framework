@@ -22,6 +22,7 @@ public:
     _asioAcceptor.open(endpoint.protocol());
     _asioAcceptor.set_option(
 	boost::asio::ip::tcp::acceptor::reuse_address(true));
+    // bind
     _asioAcceptor.bind(endpoint);
     _asioAcceptor.listen();
 

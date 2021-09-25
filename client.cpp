@@ -7,30 +7,36 @@
 class ChatClient
     : public gnf::GenericClient<boost::asio::ip::tcp::socket, ChatMessageType> {
 
+public:
+  // using parent's constructor
+  using gnf::GenericClient<boost::asio::ip::tcp::socket,
+			   ChatMessageType>::GenericClient;
+  using Client =
+      gnf::GenericClient<boost::asio::ip::tcp::socket, ChatMessageType>;
+
 protected:
+  auto onDisconnected(const std::error_code &ec) -> void override {
+    Client::onDisconnected(ec);
+    std::cout << "server disconnected\n";
+  }
   auto onMessageRecieved(const gnf::Message<ChatMessageType> &message)
       -> void override {
-    gnf::GenericClient<boost::asio::ip::tcp::socket,
-		       ChatMessageType>::onMessageRecieved(message);
+    Client::onMessageRecieved(message);
     std::cout << "message recieved\n";
   }
 
   auto onMessageSent(const gnf::Message<ChatMessageType> &message)
       -> void override {
-    gnf::GenericClient<boost::asio::ip::tcp::socket,
-		       ChatMessageType>::onMessageSent(message);
-    std::cout << "message sent\n";
+    Client::onMessageSent(message);
+    std::cout << fmt::format("message sent. body={}\n", message.body.data());
   }
-
-public:
-  using gnf::GenericClient<boost::asio::ip::tcp::socket,
-			   ChatMessageType>::GenericClient;
 };
 
 int main() {
 
   ChatClient client;
-  client.start("127.0.0.1", 8765);
+  client.start(IP, PORT);
+
   while (1) {
     auto buff = std::array<char, 1000>{};
     std::cin.getline(buff.data(), buff.size());
@@ -40,15 +46,18 @@ int main() {
       break;
     }
 
-    auto len = strlen(buff.data());
+    auto len = strlen(buff.data()) + 1;
     gnf::Message<ChatMessageType> message;
     message.header.type = ChatMessageType::Message;
     message.header.size = len;
     message.body.resize(len);
     message.body.insert(message.body.begin(), buff.data(), buff.data() + len);
 
-    std::cout << fmt::format("send data: {}\n", message.body.data());
+    if (!client.isConnected())
+      break;
 
     client.sendAsync(message);
   }
+
+  return 0;
 }

@@ -15,12 +15,20 @@ private:
   std::unique_ptr<Channel<Socket, MessageType>> _channel;
   std::thread _worker;
 
+  bool _isConnected;
+
 protected:
   virtual auto onMessageRecieved(Message<MessageType> const &message) -> void {}
 
   virtual auto onMessageSent(Message<MessageType> const &message) -> void {}
 
+  virtual auto onDisconnected(std::error_code const &ec) -> void {
+    _isConnected = false;
+  }
+
   virtual auto onConnected(std::unique_ptr<Socket> socket) -> void {
+    _isConnected = true;
+
     // on connected
     _channel = std::make_unique<Channel<Socket, MessageType>>(
 	_asioContext, std::move(socket));
@@ -31,11 +39,23 @@ protected:
     _channel->registerOnMessageSent(
 	[=](auto const &msg) { onMessageSent(msg); });
 
+    _channel->registerOnClosed([=](auto const &err) { onDisconnected(err); });
+
     _channel->start();
   }
 
 public:
-  GenericClient() {}
+  GenericClient() : _isConnected(false) {}
+
+  virtual ~GenericClient() {
+    // stop
+    _asioContext.post([=]() { _channel->stop(); });
+
+    // join
+    if (_worker.joinable()) {
+      _worker.join();
+    }
+  }
 
   auto start(std::string const &ip, int port) -> void {
     // endpoint setup
@@ -50,7 +70,6 @@ public:
 		      [me = this, s = std::move(socket)](auto &ec) mutable {
 			me->onConnected(std::move(s));
 		      });
-
     // run a worker
     _worker = std::thread([=]() { _asioContext.run(); });
   }
@@ -58,5 +77,7 @@ public:
   auto sendAsync(Message<MessageType> const &m) -> void {
     _channel->sendAsync(m);
   }
+
+  auto isConnected() -> bool { return _isConnected; }
 };
 } // namespace gnf
