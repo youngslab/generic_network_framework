@@ -1,8 +1,8 @@
 #include <iostream>
 #include <fmt/format.h>
 
-#include "network/server.hpp"
-#include "common.hpp"
+#include <gnf/server.hpp>
+#include "chat_common.hpp"
 
 class ChatServer
     : public gnf::GenericServer<boost::asio::ip::tcp::socket, ChatMessageType> {

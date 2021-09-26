@@ -1,6 +1,6 @@
 
-#include "network/client.hpp"
-#include "common.hpp"
+#include <gnf/client.hpp>
+#include "chat_common.hpp"
 #include <iostream>
 #include <sstream>
 
