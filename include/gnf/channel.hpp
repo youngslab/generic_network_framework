@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.hpp"
 #include "message.hpp"
 #include <fmt/format.h>
 #include <functional>
@@ -9,13 +10,15 @@
 
 namespace gnf {
 
-template <typename Socket, typename MessageType>
+template <typename Protocol, typename MessageType>
 class Channel
-    : public std::enable_shared_from_this<Channel<Socket, MessageType>> {
+    : public std::enable_shared_from_this<Channel<Protocol, MessageType>> {
 public:
+  using SocketType = get_socket_t<Protocol>;
+
   /* A Server and a Client have resposibility to make and passs the socket which
    * is completed to make a connection between them */
-  Channel(boost::asio::io_context &context, std::unique_ptr<Socket> socket)
+  Channel(boost::asio::io_context &context, std::unique_ptr<SocketType> socket)
       : _socket(std::move(socket)), _writeStrand(context) {}
 
   virtual ~Channel() {}
@@ -61,7 +64,7 @@ public:
 
 private:
   boost::asio::io_context _context;
-  std::unique_ptr<Socket> _socket;
+  std::unique_ptr<SocketType> _socket;
 
   std::function<void(std::error_code const &)> _onClosed;
 

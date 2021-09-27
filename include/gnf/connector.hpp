@@ -4,9 +4,13 @@
 #include "channel.hpp"
 
 namespace gnf {
-template <typename Socket, typename MessageType> class Connector {
+
+template <typename Protocol, typename MessageType> class Connector {
 public:
-  using ChannelType = Channel<Socket, MessageType>;
+  using AcceptorType = get_acceptor_t<Protocol>;
+  using EndpointType = get_endpoint_t<Protocol>;
+  using SocketType = get_socket_t<Protocol>;
+  using ChannelType = Channel<Protocol, MessageType>;
   using ChannelCreatedHandlerType =
       std::function<void(std::unique_ptr<ChannelType>)>;
 
@@ -16,13 +20,13 @@ public:
 
   ~Connector() { stop(); }
 
-  auto start(int port) {
-    boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), port);
+  auto start(EndpointType const &endpoint) {
+    // boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(),
+    // port);
 
     _asioAcceptor.open(endpoint.protocol());
-    _asioAcceptor.set_option(
-	boost::asio::ip::tcp::acceptor::reuse_address(true));
-    // bind
+    //_asioAcceptor.set_option(
+    // boost::asio::ip::tcp::acceptor::reuse_address(true));
     _asioAcceptor.bind(endpoint);
     _asioAcceptor.listen();
 
@@ -36,11 +40,11 @@ public:
 
 private:
   boost::asio::io_context &_asioContext;
-  boost::asio::ip::tcp::acceptor _asioAcceptor;
   ChannelCreatedHandlerType _onChannelCreated;
+  AcceptorType _asioAcceptor;
 
   auto startAccepting() -> void {
-    auto socket = std::make_unique<Socket>(_asioContext);
+    auto socket = std::make_unique<SocketType>(_asioContext);
     // unique_ptr will be moved to labmda. So we keep it as ref for a moment.
     auto &ref = *socket;
     _asioAcceptor.async_accept(ref, [=,
@@ -52,4 +56,5 @@ private:
     });
   }
 };
+
 } // namespace gnf

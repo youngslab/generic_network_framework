@@ -4,15 +4,23 @@
 #include <iostream>
 #include <sstream>
 
+
 class ChatClient
-    : public gnf::GenericClient<boost::asio::ip::tcp::socket, ChatMessageType> {
+    : public gnf::GenericClient<boost::asio::ip::tcp, ChatMessageType> {
 
 public:
   // using parent's constructor
-  using gnf::GenericClient<boost::asio::ip::tcp::socket,
+  using gnf::GenericClient<boost::asio::ip::tcp,
 			   ChatMessageType>::GenericClient;
-  using Client =
-      gnf::GenericClient<boost::asio::ip::tcp::socket, ChatMessageType>;
+  using Client = gnf::GenericClient<boost::asio::ip::tcp, ChatMessageType>;
+
+  auto start(std::string const &ip, int port) {
+
+    boost::asio::ip::tcp::endpoint endpoint(
+	boost::asio::ip::address::from_string(ip), port);
+
+    Client::start(endpoint);
+  }
 
 protected:
   auto onDisconnected(const std::error_code &ec) -> void override {

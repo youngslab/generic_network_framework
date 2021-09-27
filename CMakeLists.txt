@@ -22,4 +22,3 @@ if(TARGET gnf::gnf)
   feature_summary(WHAT ALL)
 endif(TARGET gnf::gnf)
 
-

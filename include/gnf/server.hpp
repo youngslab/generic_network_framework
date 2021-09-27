@@ -13,17 +13,19 @@ namespace gnf {
  * @tparam Socket
  * @tparam MessageType
  */
-template <typename Socket, typename MessageType> class GenericServer {
+template <typename Protocol, typename MessageType> class GenericServer {
 
 public:
+  using EndpointType = get_endpoint_t<Protocol>;
+
   GenericServer(int numWorkers = 1)
       : _numWorkers(numWorkers), _id(0),
 	_connector(_asioContext,
 		   [=](auto channel) { onConnected(std::move(channel)); }) {}
 
-  auto start(uint32_t port) -> void {
+  auto start(EndpointType const &endpoint) -> void {
 
-    _connector.start(port);
+    _connector.start(endpoint);
 
     for (int i = 0; i < _numWorkers; ++i) {
       _workers.emplace_back([=] { _asioContext.run(); });
@@ -32,9 +34,7 @@ public:
 
   auto stop() {
 
-    _asioContext.post([=]() {
-      _connector.stop();
-    });
+    _asioContext.post([=]() { _connector.stop(); });
 
     for (auto &worker : _workers) {
       if (!worker.joinable())
@@ -73,14 +73,14 @@ private:
   std::vector<std::thread> _workers;
 
   // Connector
-  Connector<Socket, MessageType> _connector;
+  Connector<Protocol, MessageType> _connector;
 
   // Sessions
   int _id;
-  std::unordered_map<uint32_t, std::unique_ptr<Channel<Socket, MessageType>>>
+  std::unordered_map<uint32_t, std::unique_ptr<Channel<Protocol, MessageType>>>
       sessions;
 
-  auto onConnected(std::unique_ptr<Channel<Socket, MessageType>> channel) {
+  auto onConnected(std::unique_ptr<Channel<Protocol, MessageType>> channel) {
     auto id = _id++;
 
     // Register handlers

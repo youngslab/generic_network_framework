@@ -8,11 +8,14 @@
 
 namespace gnf {
 
-template <typename Socket, typename MessageType> class GenericClient {
+template <typename Protocol, typename MessageType> class GenericClient {
+
+  using SocketType = get_socket_t<Protocol>;
+  using EndpointType = get_endpoint_t<Protocol>;
 
 private:
   boost::asio::io_service _asioContext;
-  std::unique_ptr<Channel<Socket, MessageType>> _channel;
+  std::unique_ptr<Channel<Protocol, MessageType>> _channel;
   std::thread _worker;
 
   bool _isConnected;
@@ -26,11 +29,11 @@ protected:
     _isConnected = false;
   }
 
-  virtual auto onConnected(std::unique_ptr<Socket> socket) -> void {
+  virtual auto onConnected(std::unique_ptr<SocketType> socket) -> void {
     _isConnected = true;
 
     // on connected
-    _channel = std::make_unique<Channel<Socket, MessageType>>(
+    _channel = std::make_unique<Channel<Protocol, MessageType>>(
 	_asioContext, std::move(socket));
 
     _channel->registerOnMessageRecieved(
@@ -57,13 +60,9 @@ public:
     }
   }
 
-  auto start(std::string const &ip, int port) -> void {
-    // endpoint setup
-    boost::asio::ip::tcp::endpoint endpoint(
-	boost::asio::ip::address::from_string(ip), port);
-
+  auto start(EndpointType const &endpoint) -> void {
     // make socket
-    auto socket = std::make_unique<Socket>(_asioContext);
+    auto socket = std::make_unique<SocketType>(_asioContext);
 
     auto &ref = *socket;
     ref.async_connect(endpoint,

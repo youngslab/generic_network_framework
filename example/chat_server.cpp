@@ -5,10 +5,9 @@
 #include "chat_common.hpp"
 
 class ChatServer
-    : public gnf::GenericServer<boost::asio::ip::tcp::socket, ChatMessageType> {
+    : public gnf::GenericServer<boost::asio::ip::tcp, ChatMessageType> {
 
-  using Server =
-      gnf::GenericServer<boost::asio::ip::tcp::socket, ChatMessageType>;
+  using Server = gnf::GenericServer<boost::asio::ip::tcp, ChatMessageType>;
 
 protected:
   virtual auto onMessageRecieved(int id,
@@ -34,6 +33,12 @@ protected:
       -> void override {
     Server::onSessionClosed(id, ec);
     std::cout << fmt::format("{}) session closed. ec={}\n", id, ec.message());
+  }
+
+public:
+  auto start(int port) {
+    EndpointType endpoint(boost::asio::ip::tcp::v4(), port);
+    Server::start(endpoint);
   }
 };
 
