@@ -21,12 +21,9 @@ public:
   ~Connector() { stop(); }
 
   auto start(EndpointType const &endpoint) {
-    // boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(),
-    // port);
-
     _asioAcceptor.open(endpoint.protocol());
     //_asioAcceptor.set_option(
-    // boost::asio::ip::tcp::acceptor::reuse_address(true));
+    // AcceptorType::reuse_address(true));
     _asioAcceptor.bind(endpoint);
     _asioAcceptor.listen();
 

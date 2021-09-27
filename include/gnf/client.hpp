@@ -9,9 +9,40 @@
 namespace gnf {
 
 template <typename Protocol, typename MessageType> class GenericClient {
-
+public:
   using SocketType = get_socket_t<Protocol>;
   using EndpointType = get_endpoint_t<Protocol>;
+
+  GenericClient() : _isConnected(false) {}
+
+  virtual ~GenericClient() {
+    // stop
+    _asioContext.post([=]() { _channel->stop(); });
+
+    // join
+    if (_worker.joinable()) {
+      _worker.join();
+    }
+  }
+
+  auto start(EndpointType const &endpoint) -> void {
+    // make socket
+    auto socket = std::make_unique<SocketType>(_asioContext);
+
+    auto &ref = *socket;
+    ref.async_connect(endpoint,
+		      [me = this, s = std::move(socket)](auto &ec) mutable {
+			me->onConnected(std::move(s));
+		      });
+    // run a worker
+    _worker = std::thread([=]() { _asioContext.run(); });
+  }
+
+  auto sendAsync(Message<MessageType> const &m) -> void {
+    _channel->sendAsync(m);
+  }
+
+  auto isConnected() -> bool { return _isConnected; }
 
 private:
   boost::asio::io_service _asioContext;
@@ -47,36 +78,5 @@ protected:
     _channel->start();
   }
 
-public:
-  GenericClient() : _isConnected(false) {}
-
-  virtual ~GenericClient() {
-    // stop
-    _asioContext.post([=]() { _channel->stop(); });
-
-    // join
-    if (_worker.joinable()) {
-      _worker.join();
-    }
-  }
-
-  auto start(EndpointType const &endpoint) -> void {
-    // make socket
-    auto socket = std::make_unique<SocketType>(_asioContext);
-
-    auto &ref = *socket;
-    ref.async_connect(endpoint,
-		      [me = this, s = std::move(socket)](auto &ec) mutable {
-			me->onConnected(std::move(s));
-		      });
-    // run a worker
-    _worker = std::thread([=]() { _asioContext.run(); });
-  }
-
-  auto sendAsync(Message<MessageType> const &m) -> void {
-    _channel->sendAsync(m);
-  }
-
-  auto isConnected() -> bool { return _isConnected; }
 };
 } // namespace gnf

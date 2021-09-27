@@ -43,4 +43,19 @@ template <> struct get_socket<boost::asio::ip::tcp> {
 template <typename Protocol>
 using get_socket_t = typename get_socket<Protocol>::type;
 
+template <typename Protocol> struct is_tcp : public std::false_type {};
+
+template <> struct is_tcp<boost::asio::ip::tcp> : public std::true_type {};
+
+template <typename T> static constexpr bool is_tcp_v = is_tcp<T>::value_type;
+
+template <typename Protocol>
+struct is_stream_protocol : public std::false_type {};
+
+template <>
+struct is_stream_protocol<boost::asio::local::stream_protocol>
+    : public std::true_type {};
+
+template <typename T>
+static constexpr bool is_stream_protocol_v = is_stream_protocol<T>::value_type;
 } // namespace gnf

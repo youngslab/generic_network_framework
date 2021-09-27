@@ -13,6 +13,7 @@ target_include_directories(
             $<INSTALL_INTERFACE:include/${PROJECT_PREFIX}>)
 
 target_link_libraries(gnf INTERFACE fmt::fmt Boost::thread Boost::system)
+target_compile_definitions(gnf INTERFACE UDS)
 
 add_library(gnf::gnf ALIAS gnf)
 

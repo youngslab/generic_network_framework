@@ -4,10 +4,15 @@
 #include <gnf/server.hpp>
 #include "chat_common.hpp"
 
-class ChatServer
-    : public gnf::GenericServer<boost::asio::ip::tcp, ChatMessageType> {
+#ifdef UDS
+using Protocol = boost::asio::local::stream_protocol;
+#else
+using Protocol = boost::asio::ip::tcp;
+#endif
 
-  using Server = gnf::GenericServer<boost::asio::ip::tcp, ChatMessageType>;
+class ChatServer : public gnf::GenericServer<Protocol, ChatMessageType> {
+
+  using Server = gnf::GenericServer<Protocol, ChatMessageType>;
 
 protected:
   virtual auto onMessageRecieved(int id,
@@ -36,15 +41,27 @@ protected:
   }
 
 public:
-  auto start(int port) {
-    EndpointType endpoint(boost::asio::ip::tcp::v4(), port);
+#ifdef UDS
+  auto start(std::string const &filepath) {
+    unlink(filepath.data());
+    EndpointType endpoint(filepath);
     Server::start(endpoint);
   }
+#else
+  auto start(int port) {
+    EndpointType endpoint(Protocol::v4(), port);
+    Server::start(endpoint);
+  }
+#endif
 };
 
 int main() {
   ChatServer server;
+#ifdef UDS
+  server.start(SOCKET_PATH);
+#else
   server.start(PORT);
+#endif
   while (1) {
   }
 }

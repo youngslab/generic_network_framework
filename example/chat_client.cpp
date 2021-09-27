@@ -1,32 +1,44 @@
 
+#include <boost/asio/local/stream_protocol.hpp>
 #include <gnf/client.hpp>
-#include "chat_common.hpp"
 #include <iostream>
 #include <sstream>
 
+#include "chat_common.hpp"
 
-class ChatClient
-    : public gnf::GenericClient<boost::asio::ip::tcp, ChatMessageType> {
+#ifdef UDS
+using Protocol = boost::asio::local::stream_protocol;
+#else
+using Protocol = boost::asio::ip::tcp;
+#endif
+
+class ChatClient : public gnf::GenericClient<Protocol, ChatMessageType> {
 
 public:
   // using parent's constructor
-  using gnf::GenericClient<boost::asio::ip::tcp,
-			   ChatMessageType>::GenericClient;
-  using Client = gnf::GenericClient<boost::asio::ip::tcp, ChatMessageType>;
+  using gnf::GenericClient<Protocol, ChatMessageType>::GenericClient;
+  using Client = gnf::GenericClient<Protocol, ChatMessageType>;
 
-  auto start(std::string const &ip, int port) {
-
-    boost::asio::ip::tcp::endpoint endpoint(
-	boost::asio::ip::address::from_string(ip), port);
-
+#ifdef UDS
+  auto start(std::string filepath) {
+    // unlink(filepath.data());
+    EndpointType endpoint(filepath.data());
     Client::start(endpoint);
   }
+
+#else
+  auto start(std::string const &ip, int port) {
+    EndpointType endpoint(boost::asio::ip::address::from_string(ip), port);
+    Client::start(endpoint);
+  }
+#endif
 
 protected:
   auto onDisconnected(const std::error_code &ec) -> void override {
     Client::onDisconnected(ec);
-    std::cout << "server disconnected\n";
+    std::cout << fmt::format("server disconnected. ec={} \n", ec.message());
   }
+
   auto onMessageRecieved(const gnf::Message<ChatMessageType> &message)
       -> void override {
     Client::onMessageRecieved(message);
@@ -43,7 +55,11 @@ protected:
 int main() {
 
   ChatClient client;
+#ifdef UDS
+  client.start(SOCKET_PATH);
+#else
   client.start(IP, PORT);
+#endif
 
   while (1) {
     auto buff = std::array<char, 1000>{};
