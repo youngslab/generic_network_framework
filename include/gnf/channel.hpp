@@ -2,11 +2,13 @@
 
 #include "common.hpp"
 #include "message.hpp"
+#include <boost/asio.hpp>
+#include <deque>
 #include <fmt/format.h>
 #include <functional>
-#include <deque>
-#include <boost/asio.hpp>
 #include <iostream>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 namespace gnf {
 
@@ -19,7 +21,7 @@ public:
   /* A Server and a Client have resposibility to make and passs the socket which
    * is completed to make a connection between them */
   Channel(boost::asio::io_context &context, std::unique_ptr<SocketType> socket)
-      : _socket(std::move(socket)), _writeStrand(context) {}
+      : _context(context), _socket(std::move(socket)), _writeStrand(context) {}
 
   virtual ~Channel() {}
 
@@ -35,8 +37,12 @@ public:
 
     writeHeaderAsync(msg);
 
-    if (m.header.size != 0) {
+    if (m.header.bodylen != 0) {
       writeBodyAsync(msg);
+    }
+
+    if (m.header.controllen != 0) {
+      writeControlAsync(msg);
     }
 
     onMessageSentAsync(msg);
@@ -62,8 +68,10 @@ public:
     _onClosed = onClosed;
   }
 
+  auto getNativeHandle() -> uint32_t { return this->_socket->native_handle(); }
+
 private:
-  boost::asio::io_context _context;
+  boost::asio::io_context &_context;
   std::unique_ptr<SocketType> _socket;
 
   std::function<void(std::error_code const &)> _onClosed;
@@ -78,8 +86,8 @@ private:
 
   auto onMessageHeaderRead(typename Message<MessageType>::Header const &header)
       -> void {
-    if (header.size != 0) {
-      readBodyAysnc(header.size);
+    if (header.bodylen != 0) {
+      readBodyAysnc(header.bodylen);
       return;
     }
     onMessageRecieved();
@@ -135,6 +143,25 @@ private:
 	});
   }
 
+  auto readControlAsync() -> void {
+    _readMessage.control.resize(_readMessage.header.controllen);
+    _context.post([=]() {
+      char data;
+      struct iovec io = {.iov_base = &data, .iov_len = 1};
+
+      struct msghdr msg = {0};
+      msg.msg_iov = &io;
+      msg.msg_iovlen = 1;
+      msg.msg_control = _readMessage.control.data();
+      msg.msg_controllen = _readMessage.header.controllen;
+
+      auto res = recvmsg(_socket->native_handle(), &msg, 0);
+      if (res < 0)
+	throw std::runtime_error(
+	    fmt::format("Failed to recieve control message. res={}", res));
+    });
+  }
+
   auto writeHeaderAsync(std::shared_ptr<Message<MessageType>> message) {
     // write asynchronosely
     auto ptr = &(message->header);
@@ -157,7 +184,7 @@ private:
   auto writeBodyAsync(std::shared_ptr<Message<MessageType>> message) -> void {
     boost::asio::async_write(
 	*_socket,
-	boost::asio::buffer(message->body.data(), message->header.size),
+	boost::asio::buffer(message->body.data(), message->header.bodylen),
 	_writeStrand.wrap([=](auto &ec, auto size) {
 	  if (ec) {
 	    if (_onClosed) {
@@ -169,6 +196,24 @@ private:
 		ec.message(), size));
 	  }
 	}));
+  }
+
+  auto writeControlAsync(std::shared_ptr<Message<MessageType>> message)
+      -> void {
+    _context.post(_writeStrand.wrap([=]() {
+      char data = 'x';
+      iovec io = {.iov_base = &data, .iov_len = 1};
+
+      msghdr msg = {0};
+      msg.msg_iov = &io;
+      msg.msg_iovlen = 1;
+      msg.msg_control = message->control.data();
+      msg.msg_controllen = message->control.size();
+
+      auto res = sendmsg(_socket->native_handle(), &msg, 0);
+      if (res < 0)
+	throw std::runtime_error("Failed to send control message");
+    }));
   }
 };
 

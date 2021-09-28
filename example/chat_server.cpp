@@ -2,6 +2,8 @@
 #include <fmt/format.h>
 
 #include <gnf/server.hpp>
+#include <gnf/uds.hpp>
+
 #include "chat_common.hpp"
 
 #ifdef UDS
@@ -14,13 +16,25 @@ class ChatServer : public gnf::GenericServer<Protocol, ChatMessageType> {
 
   using Server = gnf::GenericServer<Protocol, ChatMessageType>;
 
+private:
+  std::unordered_map<uint32_t, std::vector<uint32_t>> fds;
+
 protected:
   virtual auto onMessageRecieved(int id,
 				 gnf::Message<ChatMessageType> const &msg)
       -> void override {
-    Server::onMessageRecieved(id, msg);
+
     std::cout << fmt::format("{}) message recieved. msg={}\n", id,
 			     msg.body.data());
+
+    if (msg.header.type == ChatMessageType::FD) {
+      struct msghdr m = {0};
+      m.msg_control = (void *)msg.control.data(); // WARN: it's constant
+      ::cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+      unsigned char *data = CMSG_DATA(cmsg);
+    }
+
+    Server::onMessageRecieved(id, msg);
   }
 
   virtual auto onMessageSent(int id, const gnf::Message<ChatMessageType> &msg)

@@ -64,6 +64,12 @@ protected:
 
   virtual auto onMessageSent(int id, Message<MessageType> const &msg) -> void {}
 
+  auto getNativeHandle(int id) -> uint32_t {
+    return this->sessions.at(id)->getNativeHandle();
+  }
+
+  auto post(std::function<void()> handler) { _asioContext.post(handler); }
+
 private:
   // asio context
   boost::asio::io_service _asioContext;

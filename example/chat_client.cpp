@@ -52,6 +52,20 @@ protected:
   }
 };
 
+auto makeControlMessage(int fd) -> std::vector<uint8_t> {
+  std::vector<uint8_t> buff(CMSG_SPACE(sizeof(fd)));
+  struct msghdr msg = {0};
+  msg.msg_control = buff.data();
+
+  // update cmsghdr
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
+
+  return buff;
+}
+
 int main() {
 
   ChatClient client;
@@ -60,6 +74,12 @@ int main() {
 #else
   client.start(IP, PORT);
 #endif
+
+  int fd = open("foo", O_RDONLY);
+  if (fd < 0) {
+    std::cout << "File not found.\n";
+    return -1;
+  }
 
   while (1) {
     auto buff = std::array<char, 1000>{};
@@ -70,12 +90,25 @@ int main() {
       break;
     }
 
-    auto len = strlen(buff.data()) + 1;
     gnf::Message<ChatMessageType> message;
-    message.header.type = ChatMessageType::Message;
-    message.header.size = len;
-    message.body.resize(len);
-    message.body.insert(message.body.begin(), buff.data(), buff.data() + len);
+
+    if (strcmp(buff.data(), "fd") == 0) {
+      auto len = strlen(buff.data()) + 1;
+
+      gnf::Message<ChatMessageType> message;
+      message.header.type = ChatMessageType::FD;
+      message.header.bodylen = 0;
+      message.control = makeControlMessage(fd);
+      message.header.controllen = message.control.size();
+
+    } else {
+
+      auto len = strlen(buff.data()) + 1;
+      message.header.type = ChatMessageType::Message;
+      message.header.bodylen = len;
+      message.body.resize(len);
+      message.body.insert(message.body.begin(), buff.data(), buff.data() + len);
+    }
 
     if (!client.isConnected())
       break;
