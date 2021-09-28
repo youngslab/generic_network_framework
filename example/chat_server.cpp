@@ -1,5 +1,5 @@
-#include <iostream>
 #include <fmt/format.h>
+#include <iostream>
 
 #include <gnf/server.hpp>
 #include <gnf/uds.hpp>
@@ -21,17 +21,29 @@ private:
 
 protected:
   virtual auto onMessageRecieved(int id,
-				 gnf::Message<ChatMessageType> const &msg)
+                                 gnf::Message<ChatMessageType> const &msg)
       -> void override {
 
-    std::cout << fmt::format("{}) message recieved. msg={}\n", id,
-			     msg.body.data());
-
     if (msg.header.type == ChatMessageType::FD) {
-      struct msghdr m = {0};
-      m.msg_control = (void *)msg.control.data(); // WARN: it's constant
-      ::cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+      if (msg.control.size() < 1)
+        throw std::runtime_error("Failed to get a file descriptor");
+
+      int fd;
+      // dummy msghdr is for using CMGG Macros
+      struct msghdr dummy = {0};
+      dummy.msg_control = (void *)msg.control.data(); // WARN: it's constant
+      dummy.msg_controllen = CMSG_SPACE(sizeof(fd));
+
+      ::cmsghdr *cmsg = CMSG_FIRSTHDR(&dummy);
       unsigned char *data = CMSG_DATA(cmsg);
+      memmove(&fd, data, sizeof(fd));
+      // show a contents of the fd.
+      std::cout << fmt::format("{}) fd recieved. \n", id);
+      print(fd);
+
+    } else if (msg.header.type == ChatMessageType::Message) {
+      std::cout << fmt::format("{}) message recieved. msg={}\n", id,
+                               msg.body.data());
     }
 
     Server::onMessageRecieved(id, msg);

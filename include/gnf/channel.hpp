@@ -86,11 +86,19 @@ private:
 
   auto onMessageHeaderRead(typename Message<MessageType>::Header const &header)
       -> void {
+
+    if (header.bodylen == 0 && header.controllen == 0)
+      onMessageRecieved();
+
     if (header.bodylen != 0) {
       readBodyAysnc(header.bodylen);
       return;
     }
-    onMessageRecieved();
+
+    if (header.controllen != 0) {
+      readControlAsync();
+      return;
+    }
   }
 
   auto onMessageRecieved() -> void {
@@ -107,58 +115,71 @@ private:
 
   auto readHeaderAsync() -> void {
     boost::asio::async_read(
-	*_socket,
-	boost::asio::buffer(&_readMessage.header,
-			    sizeof(typename Message<MessageType>::Header)),
-	[&](std::error_code ec, std::size_t size) {
-	  if (ec) {
-	    if (_onClosed) {
-	      _onClosed(ec);
-	      return;
-	    }
-	    throw std::runtime_error(fmt::format(
-		"Failed to read a header of the message. ec={}, size={}",
-		ec.message(), size));
-	  }
-	  onMessageHeaderRead(_readMessage.header);
-	});
+        *_socket,
+        boost::asio::buffer(&_readMessage.header,
+                            sizeof(typename Message<MessageType>::Header)),
+        [&](std::error_code ec, std::size_t size) {
+          if (ec) {
+            if (_onClosed) {
+              _onClosed(ec);
+              return;
+            }
+            throw std::runtime_error(fmt::format(
+                "Failed to read a header of the message. ec={}, size={}",
+                ec.message(), size));
+          }
+          onMessageHeaderRead(_readMessage.header);
+        });
   }
 
   auto readBodyAysnc(std::size_t len) -> void {
     // async read a body
     _readMessage.body.resize(len);
     boost::asio::async_read(
-	*_socket, boost::asio::buffer(_readMessage.body.data(), len),
-	[&](std::error_code ec, std::size_t size) {
-	  if (ec) {
-	    if (_onClosed) {
-	      _onClosed(ec);
-	      return;
-	    }
-	    throw std::runtime_error(fmt::format(
-		"Failed to read a body of the message. ec={}, size={}",
-		ec.message(), size));
-	  }
-	  onMessageRecieved();
-	});
+        *_socket, boost::asio::buffer(_readMessage.body.data(), len),
+        [&](std::error_code ec, std::size_t size) {
+          if (ec) {
+            if (_onClosed) {
+              _onClosed(ec);
+              return;
+            }
+            throw std::runtime_error(fmt::format(
+                "Failed to read a body of the message. ec={}, size={}",
+                ec.message(), size));
+          }
+          onMessageRecieved();
+        });
   }
 
   auto readControlAsync() -> void {
-    _readMessage.control.resize(_readMessage.header.controllen);
+
     _context.post([=]() {
       char data;
       struct iovec io = {.iov_base = &data, .iov_len = 1};
 
       struct msghdr msg = {0};
+
       msg.msg_iov = &io;
       msg.msg_iovlen = 1;
+
+      _readMessage.control.resize(_readMessage.header.controllen);
       msg.msg_control = _readMessage.control.data();
       msg.msg_controllen = _readMessage.header.controllen;
 
       auto res = recvmsg(_socket->native_handle(), &msg, 0);
+
+      std::cout << fmt::format("read control. controllen={}\n",
+                               msg.msg_controllen);
+      for (int i = 0; i < msg.msg_controllen; i++) {
+        std::cout << fmt::format(", {:#x}", ((uint8_t *)msg.msg_control)[i]);
+      }
+      std::cout << std::endl;
+
       if (res < 0)
-	throw std::runtime_error(
-	    fmt::format("Failed to recieve control message. res={}", res));
+        throw std::runtime_error(
+            fmt::format("Failed to recieve control message. res={}", res));
+
+      onMessageRecieved();
     });
   }
 
@@ -166,36 +187,36 @@ private:
     // write asynchronosely
     auto ptr = &(message->header);
     boost::asio::async_write(
-	*_socket,
-	boost::asio::buffer(ptr, sizeof(typename Message<MessageType>::Header)),
-	_writeStrand.wrap([=](auto &ec, auto size) {
-	  if (ec) {
-	    if (_onClosed) {
-	      _onClosed(ec);
-	      return;
-	    }
-	    throw std::runtime_error(fmt::format(
-		"Failed to send a header of the message. ec={}, size={}",
-		ec.message(), size));
-	  }
-	}));
+        *_socket,
+        boost::asio::buffer(ptr, sizeof(typename Message<MessageType>::Header)),
+        _writeStrand.wrap([=](auto &ec, auto size) {
+          if (ec) {
+            if (_onClosed) {
+              _onClosed(ec);
+              return;
+            }
+            throw std::runtime_error(fmt::format(
+                "Failed to send a header of the message. ec={}, size={}",
+                ec.message(), size));
+          }
+        }));
   }
 
   auto writeBodyAsync(std::shared_ptr<Message<MessageType>> message) -> void {
     boost::asio::async_write(
-	*_socket,
-	boost::asio::buffer(message->body.data(), message->header.bodylen),
-	_writeStrand.wrap([=](auto &ec, auto size) {
-	  if (ec) {
-	    if (_onClosed) {
-	      _onClosed(ec);
-	      return;
-	    }
-	    throw std::runtime_error(fmt::format(
-		"Failed to send a body of the message. ec={}, size={}",
-		ec.message(), size));
-	  }
-	}));
+        *_socket,
+        boost::asio::buffer(message->body.data(), message->header.bodylen),
+        _writeStrand.wrap([=](auto &ec, auto size) {
+          if (ec) {
+            if (_onClosed) {
+              _onClosed(ec);
+              return;
+            }
+            throw std::runtime_error(fmt::format(
+                "Failed to send a body of the message. ec={}, size={}",
+                ec.message(), size));
+          }
+        }));
   }
 
   auto writeControlAsync(std::shared_ptr<Message<MessageType>> message)
@@ -210,9 +231,16 @@ private:
       msg.msg_control = message->control.data();
       msg.msg_controllen = message->control.size();
 
+      std::cout << fmt::format("write control. controllen={}\n",
+                               msg.msg_controllen);
+      for (int i = 0; i < msg.msg_controllen; i++) {
+        std::cout << fmt::format(", {:#x}", ((uint8_t *)msg.msg_control)[i]);
+      }
+      std::cout << std::endl;
+
       auto res = sendmsg(_socket->native_handle(), &msg, 0);
       if (res < 0)
-	throw std::runtime_error("Failed to send control message");
+        throw std::runtime_error("Failed to send control message");
     }));
   }
 };

@@ -1,5 +1,6 @@
 
 #include <boost/asio/local/stream_protocol.hpp>
+#include <fstream>
 #include <gnf/client.hpp>
 #include <iostream>
 #include <sstream>
@@ -48,7 +49,16 @@ protected:
   auto onMessageSent(const gnf::Message<ChatMessageType> &message)
       -> void override {
     Client::onMessageSent(message);
-    std::cout << fmt::format("message sent. body={}\n", message.body.data());
+    switch (message.header.type) {
+    case ChatMessageType::Message:
+      std::cout << fmt::format("message sent. body={}\n", message.body.data());
+      break;
+    case ChatMessageType::FD:
+      std::cout << fmt::format("fd sent.\n");
+      break;
+    default:
+      break;
+    }
   }
 };
 
@@ -56,6 +66,7 @@ auto makeControlMessage(int fd) -> std::vector<uint8_t> {
   std::vector<uint8_t> buff(CMSG_SPACE(sizeof(fd)));
   struct msghdr msg = {0};
   msg.msg_control = buff.data();
+  msg.msg_controllen = CMSG_SPACE(sizeof(fd));
 
   // update cmsghdr
   struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
@@ -95,7 +106,6 @@ int main() {
     if (strcmp(buff.data(), "fd") == 0) {
       auto len = strlen(buff.data()) + 1;
 
-      gnf::Message<ChatMessageType> message;
       message.header.type = ChatMessageType::FD;
       message.header.bodylen = 0;
       message.control = makeControlMessage(fd);
@@ -105,9 +115,13 @@ int main() {
 
       auto len = strlen(buff.data()) + 1;
       message.header.type = ChatMessageType::Message;
+      // body
       message.header.bodylen = len;
       message.body.resize(len);
       message.body.insert(message.body.begin(), buff.data(), buff.data() + len);
+      // control
+      message.header.controllen = 0;
+      message.control.resize(0);
     }
 
     if (!client.isConnected())
