@@ -74,6 +74,15 @@ auto makeControlMessage(int fd) -> std::vector<uint8_t> {
   cmsg->cmsg_type = SCM_RIGHTS;
   cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
 
+  // check control message
+  std::cout << fmt::format("make control. controllen={}\n",
+                           msg.msg_controllen);
+
+  for (int i = 0; i < msg.msg_controllen; i++) {
+    std::cout << fmt::format(", {:#x}", ((uint8_t *)msg.msg_control)[i]);
+  }
+  std::cout << std::endl;
+
   return buff;
 }
 

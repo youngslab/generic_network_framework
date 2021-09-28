@@ -49,7 +49,7 @@ public:
   }
 
   auto recieveAsync() -> void {
-    // TODO: make a resposibility to trigger next recived operation to a User
+    // TODO: make a resposibility to trigger next recived iperation to a User
   }
 
   auto registerOnMessageRecieved(
@@ -162,11 +162,16 @@ private:
       msg.msg_iov = &io;
       msg.msg_iovlen = 1;
 
-      _readMessage.control.resize(_readMessage.header.controllen);
+      _readMessage.control.resize(_readMessage.header.controllen+1);
+
       msg.msg_control = _readMessage.control.data();
       msg.msg_controllen = _readMessage.header.controllen;
 
       auto res = recvmsg(_socket->native_handle(), &msg, 0);
+      if (res < 0)
+        throw std::runtime_error(
+            fmt::format("Failed to recieve control message. res={}, errno={}",
+                        res, strerror(errno)));
 
       std::cout << fmt::format("read control. controllen={}\n",
                                msg.msg_controllen);
@@ -174,10 +179,6 @@ private:
         std::cout << fmt::format(", {:#x}", ((uint8_t *)msg.msg_control)[i]);
       }
       std::cout << std::endl;
-
-      if (res < 0)
-        throw std::runtime_error(
-            fmt::format("Failed to recieve control message. res={}", res));
 
       onMessageRecieved();
     });

@@ -26,7 +26,7 @@ protected:
 
     if (msg.header.type == ChatMessageType::FD) {
       if (msg.control.size() < 1)
-        throw std::runtime_error("Failed to get a file descriptor");
+        throw std::runtime_error(fmt::format("Failed to get a file descriptor. msg_controllen={}", msg.header.controllen));
 
       int fd;
       // dummy msghdr is for using CMGG Macros
