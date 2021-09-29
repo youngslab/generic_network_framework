@@ -4,10 +4,13 @@
 #include <stdexcept>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <vector>
 
 namespace gnf {
 
 namespace native {
+
+
 
 void write_fd(int sock, int fd, void *data, size_t data_len) {
 

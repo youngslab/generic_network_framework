@@ -26,21 +26,13 @@ protected:
 
     if (msg.header.type == ChatMessageType::FD) {
       if (msg.control.size() < 1)
-        throw std::runtime_error(fmt::format("Failed to get a file descriptor. msg_controllen={}", msg.header.controllen));
+        throw std::runtime_error(
+            fmt::format("Failed to get a file descriptor. msg_controllen={}",
+                        msg.header.controllen));
 
-      int fd;
-      // dummy msghdr is for using CMGG Macros
-      struct msghdr dummy = {0};
-      dummy.msg_control = (void *)msg.control.data(); // WARN: it's constant
-      dummy.msg_controllen = CMSG_SPACE(sizeof(fd));
-
-      ::cmsghdr *cmsg = CMSG_FIRSTHDR(&dummy);
-      unsigned char *data = CMSG_DATA(cmsg);
-      memmove(&fd, data, sizeof(fd));
-      // show a contents of the fd.
-      std::cout << fmt::format("{}) fd recieved. \n", id);
-      print(fd);
-
+      int fd = to_fd(msg.control);
+      std::cout << fmt::format("{}) fd({}) recieved. content={}", id, fd,
+                               to_string(fd));
     } else if (msg.header.type == ChatMessageType::Message) {
       std::cout << fmt::format("{}) message recieved. msg={}\n", id,
                                msg.body.data());

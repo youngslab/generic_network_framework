@@ -152,36 +152,37 @@ private:
   }
 
   auto readControlAsync() -> void {
+    // When recvmsg directly will be fail with "Resouce
+    // temporarily unavailable". Becuase it works as an non-blocking mode by
+    // default. There is no data to read at the moment. To avoid this, request
+    // asio to wait until it is ready to read.
+    _socket->async_wait(
+        boost::asio::socket_base::wait_read, [=](boost::system::error_code ec) {
+          if (ec)
+            throw std::runtime_error(fmt::format(
+                "Failed to async_wait(wait_read). ec={} \n", ec.message()));
 
-    _context.post([=]() {
-      char data;
-      struct iovec io = {.iov_base = &data, .iov_len = 1};
+          // dummy data. 0 data size is impossible to send.
+          char data;
+          iovec io = {.iov_base = &data, .iov_len = 1};
 
-      struct msghdr msg = {0};
+          _readMessage.control.resize(_readMessage.header.controllen);
 
-      msg.msg_iov = &io;
-      msg.msg_iovlen = 1;
+          msghdr msg = {0};
+          msg.msg_iov = &io;
+          msg.msg_iovlen = 1;
+          msg.msg_control = _readMessage.control.data();
+          msg.msg_controllen = _readMessage.header.controllen;
 
-      _readMessage.control.resize(_readMessage.header.controllen+1);
+          auto res = recvmsg(_socket->native_handle(), &msg, 0);
 
-      msg.msg_control = _readMessage.control.data();
-      msg.msg_controllen = _readMessage.header.controllen;
+          if (res < 0)
+            throw std::runtime_error(fmt::format(
+                "Failed to recieve control message. res={}, errno={}", res,
+                strerror(errno)));
 
-      auto res = recvmsg(_socket->native_handle(), &msg, 0);
-      if (res < 0)
-        throw std::runtime_error(
-            fmt::format("Failed to recieve control message. res={}, errno={}",
-                        res, strerror(errno)));
-
-      std::cout << fmt::format("read control. controllen={}\n",
-                               msg.msg_controllen);
-      for (int i = 0; i < msg.msg_controllen; i++) {
-        std::cout << fmt::format(", {:#x}", ((uint8_t *)msg.msg_control)[i]);
-      }
-      std::cout << std::endl;
-
-      onMessageRecieved();
-    });
+          onMessageRecieved();
+        });
   }
 
   auto writeHeaderAsync(std::shared_ptr<Message<MessageType>> message) {
@@ -230,16 +231,10 @@ private:
       msg.msg_iov = &io;
       msg.msg_iovlen = 1;
       msg.msg_control = message->control.data();
-      msg.msg_controllen = message->control.size();
-
-      std::cout << fmt::format("write control. controllen={}\n",
-                               msg.msg_controllen);
-      for (int i = 0; i < msg.msg_controllen; i++) {
-        std::cout << fmt::format(", {:#x}", ((uint8_t *)msg.msg_control)[i]);
-      }
-      std::cout << std::endl;
+      msg.msg_controllen = message->header.controllen;
 
       auto res = sendmsg(_socket->native_handle(), &msg, 0);
+
       if (res < 0)
         throw std::runtime_error("Failed to send control message");
     }));
